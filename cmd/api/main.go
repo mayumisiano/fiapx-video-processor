@@ -11,6 +11,11 @@ import (
 	identitypostgres "video-processor/internal/identity/postgres"
 	"video-processor/internal/platform/config"
 	platformpostgres "video-processor/internal/platform/postgres"
+	platformrabbitmq "video-processor/internal/platform/rabbitmq"
+	videohttp "video-processor/internal/videoprocessing/http"
+	videopostgres "video-processor/internal/videoprocessing/postgres"
+	videoqueue "video-processor/internal/videoprocessing/queue"
+	videostorage "video-processor/internal/videoprocessing/storage"
 )
 
 func main() {
@@ -23,15 +28,37 @@ func main() {
 	}
 	defer pool.Close()
 
-	repo := identitypostgres.NewRepository(pool)
+	rabbitConn, err := platformrabbitmq.Connect(cfg.RabbitMQURL)
+	if err != nil {
+		log.Fatalf("connect to rabbitmq: %v", err)
+	}
+	defer rabbitConn.Close()
+
+	publisher, err := videoqueue.NewPublisher(rabbitConn)
+	if err != nil {
+		log.Fatalf("declare queue topology: %v", err)
+	}
+
+	storageClient, err := videostorage.NewClient(
+		cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
+		cfg.MinIOVideosBucket, cfg.MinIOResultsBucket,
+	)
+	if err != nil {
+		log.Fatalf("connect to minio: %v", err)
+	}
+
+	identityRepo := identitypostgres.NewRepository(pool)
 	issuer := identityjwt.NewIssuer(cfg.JWTSecret)
-	handler := identityhttp.NewHandler(repo, issuer)
+	identityHandler := identityhttp.NewHandler(identityRepo, issuer)
+
+	videoRepo := videopostgres.NewRepository(pool)
+	videoHandler := videohttp.NewHandler(videoRepo, storageClient, publisher)
 
 	router := gin.Default()
 	v1 := router.Group("/api/v1")
-	handler.RegisterRoutes(v1)
+	identityHandler.RegisterRoutes(v1)
+	videoHandler.RegisterRoutes(v1, identityHandler.RequireAuth())
 
-	// TODO: wire RabbitMQ, MinIO and the remaining HTTP handlers.
 	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("run server: %v", err)
 	}
