@@ -12,6 +12,11 @@ type Config struct {
 	MinIOSecretKey     string
 	MinIOVideosBucket  string
 	MinIOResultsBucket string
+	SMTPHost           string
+	SMTPPort           string
+	SMTPUser           string
+	SMTPPassword       string
+	SMTPFrom           string
 }
 
 func Load() Config {
@@ -25,6 +30,11 @@ func Load() Config {
 		MinIOSecretKey:     os.Getenv("MINIO_SECRET_KEY"),
 		MinIOVideosBucket:  getEnv("MINIO_BUCKET_VIDEOS", "videos"),
 		MinIOResultsBucket: getEnv("MINIO_BUCKET_RESULTS", "results"),
+		SMTPHost:           os.Getenv("SMTP_HOST"),
+		SMTPPort:           getEnv("SMTP_PORT", "2525"),
+		SMTPUser:           os.Getenv("SMTP_USER"),
+		SMTPPassword:       os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:           getEnv("SMTP_FROM", "no-reply@fiapx.local"),
 	}
 }
 

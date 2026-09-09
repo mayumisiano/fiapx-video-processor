@@ -1,7 +1,6 @@
 package jwt
 
 import (
-	"errors"
 	"time"
 
 	jwtlib "github.com/golang-jwt/jwt/v5"
@@ -9,16 +8,15 @@ import (
 	"video-processor/internal/identity/domain"
 )
 
-var ErrInvalidToken = errors.New("invalid token")
-
 const expiry = 24 * time.Hour
 
-type Claims struct {
+type claims struct {
 	UserID string `json:"sub"`
 	Email  string `json:"email"`
 	jwtlib.RegisteredClaims
 }
 
+// Issuer implements domain.TokenIssuer using HS256-signed JWTs.
 type Issuer struct {
 	secret []byte
 }
@@ -29,7 +27,7 @@ func NewIssuer(secret string) *Issuer {
 
 func (i *Issuer) Issue(user *domain.User) (string, error) {
 	now := time.Now()
-	claims := Claims{
+	c := claims{
 		UserID: user.ID.String(),
 		Email:  user.Email,
 		RegisteredClaims: jwtlib.RegisteredClaims{
@@ -37,17 +35,17 @@ func (i *Issuer) Issue(user *domain.User) (string, error) {
 			ExpiresAt: jwtlib.NewNumericDate(now.Add(expiry)),
 		},
 	}
-	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
+	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, c)
 	return token.SignedString(i.secret)
 }
 
-func (i *Issuer) Parse(tokenString string) (*Claims, error) {
-	claims := &Claims{}
-	token, err := jwtlib.ParseWithClaims(tokenString, claims, func(t *jwtlib.Token) (interface{}, error) {
+func (i *Issuer) Parse(tokenString string) (*domain.TokenClaims, error) {
+	c := &claims{}
+	token, err := jwtlib.ParseWithClaims(tokenString, c, func(t *jwtlib.Token) (interface{}, error) {
 		return i.secret, nil
 	})
 	if err != nil || !token.Valid {
-		return nil, ErrInvalidToken
+		return nil, domain.ErrInvalidToken
 	}
-	return claims, nil
+	return &domain.TokenClaims{UserID: c.UserID, Email: c.Email}, nil
 }

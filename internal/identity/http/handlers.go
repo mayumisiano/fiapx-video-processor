@@ -4,23 +4,19 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 
+	"video-processor/internal/identity/application"
 	"video-processor/internal/identity/domain"
-	identityjwt "video-processor/internal/identity/jwt"
 )
 
 type Handler struct {
-	repo   domain.Repository
-	issuer *identityjwt.Issuer
+	service *application.Service
 }
 
-func NewHandler(repo domain.Repository, issuer *identityjwt.Issuer) *Handler {
-	return &Handler{repo: repo, issuer: issuer}
+func NewHandler(service *application.Service) *Handler {
+	return &Handler{service: service}
 }
 
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
@@ -38,7 +34,7 @@ func (h *Handler) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := h.issuer.Parse(strings.TrimPrefix(header, prefix))
+		claims, err := h.service.Authenticate(strings.TrimPrefix(header, prefix))
 		if err != nil {
 			errorResponse(c, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or expired token")
 			c.Abort()
@@ -77,6 +73,17 @@ func errorResponse(c *gin.Context, status int, code, message string) {
 	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
 }
 
+func toAuthResponse(result *application.AuthResult) authResponse {
+	return authResponse{
+		User: userResponse{
+			ID:    result.User.ID.String(),
+			Name:  result.User.Name,
+			Email: result.User.Email,
+		},
+		Token: result.Token,
+	}
+}
+
 func (h *Handler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -84,21 +91,8 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	result, err := h.service.Register(c.Request.Context(), req.Name, req.Email, req.Password)
 	if err != nil {
-		errorResponse(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not process password")
-		return
-	}
-
-	user := &domain.User{
-		ID:           uuid.New(),
-		Name:         req.Name,
-		Email:        req.Email,
-		PasswordHash: string(hash),
-		CreatedAt:    time.Now(),
-	}
-
-	if err := h.repo.Create(c.Request.Context(), user); err != nil {
 		if errors.Is(err, domain.ErrEmailAlreadyExists) {
 			errorResponse(c, http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "Email already exists")
 			return
@@ -107,16 +101,7 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	token, err := h.issuer.Issue(user)
-	if err != nil {
-		errorResponse(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not issue token")
-		return
-	}
-
-	c.JSON(http.StatusCreated, authResponse{
-		User:  userResponse{ID: user.ID.String(), Name: user.Name, Email: user.Email},
-		Token: token,
-	})
+	c.JSON(http.StatusCreated, toAuthResponse(result))
 }
 
 func (h *Handler) Login(c *gin.Context) {
@@ -126,25 +111,15 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	user, err := h.repo.FindByEmail(c.Request.Context(), req.Email)
+	result, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		errorResponse(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
+		if errors.Is(err, domain.ErrInvalidCredentials) {
+			errorResponse(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
+			return
+		}
+		errorResponse(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not authenticate")
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		errorResponse(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
-		return
-	}
-
-	token, err := h.issuer.Issue(user)
-	if err != nil {
-		errorResponse(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not issue token")
-		return
-	}
-
-	c.JSON(http.StatusOK, authResponse{
-		User:  userResponse{ID: user.ID.String(), Name: user.Name, Email: user.Email},
-		Token: token,
-	})
+	c.JSON(http.StatusOK, toAuthResponse(result))
 }

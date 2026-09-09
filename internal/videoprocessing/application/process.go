@@ -1,4 +1,4 @@
-package worker
+package application
 
 import (
 	"archive/zip"
@@ -6,25 +6,40 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
 
+	identitydomain "video-processor/internal/identity/domain"
+	notificationdomain "video-processor/internal/notification/domain"
 	"video-processor/internal/videoprocessing/domain"
-	"video-processor/internal/videoprocessing/ffmpeg"
-	"video-processor/internal/videoprocessing/storage"
 )
 
 var errCorruptedVideo = errors.New("corrupted video")
 
-type Processor struct {
-	repo    domain.Repository
-	storage *storage.Client
+var failureMessages = map[domain.FailureReason]string{
+	domain.FailureInvalidFormat: "The uploaded file has an unsupported format.",
+	domain.FailureSizeExceeded:  "The uploaded file exceeds the allowed size or duration.",
+	domain.FailureCorruptedFile: "The uploaded file appears to be corrupted and could not be processed.",
+	domain.FailureInternalError: "An internal error occurred while processing your video.",
 }
 
-func NewProcessor(repo domain.Repository, storageClient *storage.Client) *Processor {
-	return &Processor{repo: repo, storage: storageClient}
+// Processor is the use case the worker adapter invokes for each queued
+// message. It's a separate type from Service (rather than extra fields on
+// it) so the HTTP adapter's wiring never needs to know about the Identity
+// or Notification contexts.
+type Processor struct {
+	repo      domain.Repository
+	storage   domain.Storage
+	extractor domain.FrameExtractor
+	users     identitydomain.Repository
+	notifier  notificationdomain.Notifier
+}
+
+func NewProcessor(repo domain.Repository, storage domain.Storage, extractor domain.FrameExtractor, users identitydomain.Repository, notifier notificationdomain.Notifier) *Processor {
+	return &Processor{repo: repo, storage: storage, extractor: extractor, users: users, notifier: notifier}
 }
 
 // Process runs one ProcessingRequest end to end. A returned error means an
@@ -59,13 +74,42 @@ func (p *Processor) Process(ctx context.Context, requestID string) error {
 		if err := req.RecordFailure(reason); err != nil {
 			return fmt.Errorf("record failure: %w", err)
 		}
-		return p.repo.Update(ctx, req)
+		if err := p.repo.Update(ctx, req); err != nil {
+			return err
+		}
+		p.notifyBestEffort(ctx, req, failureMessages[reason])
+		return nil
 	}
 
 	if err := req.CompleteProcessing(*result); err != nil {
 		return fmt.Errorf("complete processing: %w", err)
 	}
-	return p.repo.Update(ctx, req)
+	if err := p.repo.Update(ctx, req); err != nil {
+		return err
+	}
+	p.notifyBestEffort(ctx, req, "")
+	return nil
+}
+
+// notifyBestEffort sends the outcome email after the aggregate's state is
+// already durably persisted, so a notification failure never affects the
+// request's status (docs/use-cases.md UC07 3a, docs/event-storming.md).
+// reason is empty for a success notification.
+func (p *Processor) notifyBestEffort(ctx context.Context, req *domain.ProcessingRequest, reason string) {
+	user, err := p.users.FindByID(ctx, req.UserID)
+	if err != nil {
+		log.Printf("notify request %s: could not load user: %v", req.ID, err)
+		return
+	}
+
+	if reason == "" {
+		err = p.notifier.NotifyCompleted(ctx, user.Email, req.Metadata.OriginalName)
+	} else {
+		err = p.notifier.NotifyFailed(ctx, user.Email, req.Metadata.OriginalName, reason)
+	}
+	if err != nil {
+		log.Printf("notify request %s: %v", req.ID, err)
+	}
 }
 
 func (p *Processor) extractAndPackage(ctx context.Context, req *domain.ProcessingRequest) (*domain.ProcessingResult, error) {
@@ -85,7 +129,7 @@ func (p *Processor) extractAndPackage(ctx context.Context, req *domain.Processin
 		return nil, fmt.Errorf("create frames dir: %w", err)
 	}
 
-	frameCount, err := ffmpeg.ExtractFrames(ctx, videoPath, framesDir)
+	frameCount, err := p.extractor.ExtractFrames(ctx, videoPath, framesDir)
 	if err != nil || frameCount == 0 {
 		return nil, fmt.Errorf("%w: %v", errCorruptedVideo, err)
 	}

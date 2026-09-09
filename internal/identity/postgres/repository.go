@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,6 +42,21 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (*domain.Use
 	err := r.pool.QueryRow(ctx,
 		`SELECT id, name, email, password_hash, created_at FROM users WHERE email = $1`,
 		email,
+	).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (r *Repository) FindByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
+	var u domain.User
+	err := r.pool.QueryRow(ctx,
+		`SELECT id, name, email, password_hash, created_at FROM users WHERE id = $1`,
+		id,
 	).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

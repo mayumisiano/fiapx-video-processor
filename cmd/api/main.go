@@ -6,12 +6,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	identityapplication "video-processor/internal/identity/application"
 	identityhttp "video-processor/internal/identity/http"
 	identityjwt "video-processor/internal/identity/jwt"
 	identitypostgres "video-processor/internal/identity/postgres"
 	"video-processor/internal/platform/config"
 	platformpostgres "video-processor/internal/platform/postgres"
 	platformrabbitmq "video-processor/internal/platform/rabbitmq"
+	videoapplication "video-processor/internal/videoprocessing/application"
+	videoffmpeg "video-processor/internal/videoprocessing/ffmpeg"
 	videohttp "video-processor/internal/videoprocessing/http"
 	videopostgres "video-processor/internal/videoprocessing/postgres"
 	videoqueue "video-processor/internal/videoprocessing/queue"
@@ -49,10 +52,13 @@ func main() {
 
 	identityRepo := identitypostgres.NewRepository(pool)
 	issuer := identityjwt.NewIssuer(cfg.JWTSecret)
-	identityHandler := identityhttp.NewHandler(identityRepo, issuer)
+	identityService := identityapplication.NewService(identityRepo, issuer)
+	identityHandler := identityhttp.NewHandler(identityService)
 
 	videoRepo := videopostgres.NewRepository(pool)
-	videoHandler := videohttp.NewHandler(videoRepo, storageClient, publisher)
+	extractor := videoffmpeg.NewExtractor()
+	videoService := videoapplication.NewService(videoRepo, storageClient, publisher, extractor)
+	videoHandler := videohttp.NewHandler(videoService)
 
 	router := gin.Default()
 	v1 := router.Group("/api/v1")

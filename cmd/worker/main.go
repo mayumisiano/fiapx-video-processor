@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
+	identitypostgres "video-processor/internal/identity/postgres"
+	notificationsmtp "video-processor/internal/notification/smtp"
 	"video-processor/internal/platform/config"
 	platformpostgres "video-processor/internal/platform/postgres"
 	platformrabbitmq "video-processor/internal/platform/rabbitmq"
+	videoapplication "video-processor/internal/videoprocessing/application"
+	videoffmpeg "video-processor/internal/videoprocessing/ffmpeg"
 	videopostgres "video-processor/internal/videoprocessing/postgres"
 	videoqueue "video-processor/internal/videoprocessing/queue"
 	videostorage "video-processor/internal/videoprocessing/storage"
@@ -30,7 +33,7 @@ func main() {
 	}
 	defer rabbitConn.Close()
 
-	consumer, err := videoqueue.NewConsumer(rabbitConn)
+	queueConsumer, err := videoqueue.NewConsumer(rabbitConn)
 	if err != nil {
 		log.Fatalf("declare queue topology: %v", err)
 	}
@@ -44,28 +47,18 @@ func main() {
 	}
 
 	repo := videopostgres.NewRepository(pool)
-	processor := videoworker.NewProcessor(repo, storageClient)
+	userRepo := identitypostgres.NewRepository(pool)
+	mailer := notificationsmtp.NewMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)
+	extractor := videoffmpeg.NewExtractor()
 
-	deliveries, err := consumer.Consume(ctx)
+	processor := videoapplication.NewProcessor(repo, storageClient, extractor, userRepo, mailer)
+	consumer := videoworker.NewConsumer(processor)
+
+	deliveries, err := queueConsumer.Consume(ctx)
 	if err != nil {
 		log.Fatalf("consume queue: %v", err)
 	}
 
 	log.Println("worker ready, waiting for messages")
-	for delivery := range deliveries {
-		var msg videoqueue.Message
-		if err := json.Unmarshal(delivery.Body, &msg); err != nil {
-			log.Printf("invalid message payload: %v", err)
-			_ = delivery.Nack(false, false)
-			continue
-		}
-
-		if err := processor.Process(ctx, msg.RequestID); err != nil {
-			log.Printf("processing request %s failed: %v", msg.RequestID, err)
-			_ = delivery.Nack(false, false)
-			continue
-		}
-
-		_ = delivery.Ack(false)
-	}
+	consumer.Run(ctx, deliveries)
 }

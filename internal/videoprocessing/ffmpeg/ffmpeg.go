@@ -15,7 +15,15 @@ import (
 // as a reasonable default for the hackathon MVP.
 const framesPerSecond = 1
 
-func ProbeDurationSeconds(ctx context.Context, filePath string) (float64, error) {
+// Extractor implements domain.FrameExtractor by shelling out to the
+// ffmpeg/ffprobe binaries.
+type Extractor struct{}
+
+func NewExtractor() *Extractor {
+	return &Extractor{}
+}
+
+func (e *Extractor) ProbeDurationSeconds(ctx context.Context, filePath string) (float64, error) {
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "error",
 		"-show_entries", "format=duration",
@@ -35,7 +43,7 @@ func ProbeDurationSeconds(ctx context.Context, filePath string) (float64, error)
 	return duration, nil
 }
 
-func ExtractFrames(ctx context.Context, videoPath, outputDir string) (int, error) {
+func (e *Extractor) ExtractFrames(ctx context.Context, videoPath, outputDir string) (int, error) {
 	pattern := filepath.Join(outputDir, "frame-%04d.jpg")
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", videoPath,

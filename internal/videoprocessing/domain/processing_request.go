@@ -29,11 +29,22 @@ const (
 const MaxAttempts = 3
 
 var (
-	ErrInvalidTransition = errors.New("invalid state transition")
-	ErrRetriesExhausted  = errors.New("retries exhausted")
-	ErrRequestNotFound   = errors.New("processing request not found")
-	ErrNotOwner          = errors.New("processing request does not belong to this user")
+	ErrInvalidTransition        = errors.New("invalid state transition")
+	ErrRetriesExhausted         = errors.New("retries exhausted")
+	ErrRequestNotFound          = errors.New("processing request not found")
+	ErrNotOwner                 = errors.New("processing request does not belong to this user")
+	ErrResultNotReady           = errors.New("result is not ready yet")
+	ErrResultExpired            = errors.New("result has passed the retention window")
+	ErrNotFailed                = errors.New("request is not currently failed")
+	ErrOriginalVideoUnavailable = errors.New("original video is no longer available")
 )
+
+// RetentionPeriod is how long a completed result stays downloadable
+// (docs/domain-modeling.md §7.3, also enforced by a MinIO lifecycle policy).
+const RetentionPeriod = 30 * 24 * time.Hour
+
+// DownloadURLExpiry is how long a presigned download URL stays valid.
+const DownloadURLExpiry = 5 * time.Minute
 
 type VideoMetadata struct {
 	OriginalName    string
