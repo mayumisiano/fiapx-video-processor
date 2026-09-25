@@ -10,19 +10,36 @@ import (
 
 type Client struct {
 	mc            *minio.Client
+	presignClient *minio.Client
 	videosBucket  string
 	resultsBucket string
 }
 
-func NewClient(endpoint, accessKey, secretKey, videosBucket, resultsBucket string) (*Client, error) {
-	mc, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: false,
-	})
+// NewClient wires two MinIO clients against the same bucket credentials:
+// mc talks to the internal endpoint (e.g. the Docker network's "minio:9000")
+// for server-side reads/writes, while presignClient signs URLs against
+// publicEndpoint, the host a browser can actually resolve. They differ
+// whenever the API runs behind a different network boundary than its
+// clients — same signing keys, different advertised host.
+func NewClient(endpoint, publicEndpoint, accessKey, secretKey, videosBucket, resultsBucket string) (*Client, error) {
+	creds := credentials.NewStaticV4(accessKey, secretKey, "")
+
+	// Region is pinned explicitly so presignClient never needs to reach
+	// the server to auto-detect it — it points at publicEndpoint, which
+	// isn't reachable from inside the network the API runs in.
+	const region = "us-east-1"
+
+	mc, err := minio.New(endpoint, &minio.Options{Creds: creds, Secure: false, Region: region})
 	if err != nil {
 		return nil, err
 	}
-	return &Client{mc: mc, videosBucket: videosBucket, resultsBucket: resultsBucket}, nil
+
+	presignClient, err := minio.New(publicEndpoint, &minio.Options{Creds: creds, Secure: false, Region: region})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{mc: mc, presignClient: presignClient, videosBucket: videosBucket, resultsBucket: resultsBucket}, nil
 }
 
 func (c *Client) UploadVideo(ctx context.Context, key, filePath, contentType string) error {
@@ -45,7 +62,7 @@ func (c *Client) UploadResult(ctx context.Context, key, filePath string) error {
 }
 
 func (c *Client) PresignedResultURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	u, err := c.mc.PresignedGetObject(ctx, c.resultsBucket, key, expiry, nil)
+	u, err := c.presignClient.PresignedGetObject(ctx, c.resultsBucket, key, expiry, nil)
 	if err != nil {
 		return "", err
 	}

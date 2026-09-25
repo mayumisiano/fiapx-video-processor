@@ -39,7 +39,7 @@ func main() {
 	}
 
 	storageClient, err := videostorage.NewClient(
-		cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
+		cfg.MinIOEndpoint, cfg.MinIOPublicEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
 		cfg.MinIOVideosBucket, cfg.MinIOResultsBucket,
 	)
 	if err != nil {

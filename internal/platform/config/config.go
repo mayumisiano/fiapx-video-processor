@@ -3,38 +3,42 @@ package config
 import "os"
 
 type Config struct {
-	Port               string
-	DatabaseURL        string
-	JWTSecret          string
-	RabbitMQURL        string
-	MinIOEndpoint      string
-	MinIOAccessKey     string
-	MinIOSecretKey     string
-	MinIOVideosBucket  string
-	MinIOResultsBucket string
-	SMTPHost           string
-	SMTPPort           string
-	SMTPUser           string
-	SMTPPassword       string
-	SMTPFrom           string
+	Port                string
+	DatabaseURL         string
+	JWTSecret           string
+	RabbitMQURL         string
+	MinIOEndpoint       string
+	MinIOPublicEndpoint string
+	MinIOAccessKey      string
+	MinIOSecretKey      string
+	MinIOVideosBucket   string
+	MinIOResultsBucket  string
+	SMTPHost            string
+	SMTPPort            string
+	SMTPUser            string
+	SMTPPassword        string
+	SMTPFrom            string
+	FrontendOrigin      string
 }
 
 func Load() Config {
 	return Config{
-		Port:               getEnv("PORT", "8080"),
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		JWTSecret:          os.Getenv("JWT_SECRET"),
-		RabbitMQURL:        os.Getenv("RABBITMQ_URL"),
-		MinIOEndpoint:      os.Getenv("MINIO_ENDPOINT"),
-		MinIOAccessKey:     os.Getenv("MINIO_ACCESS_KEY"),
-		MinIOSecretKey:     os.Getenv("MINIO_SECRET_KEY"),
-		MinIOVideosBucket:  getEnv("MINIO_BUCKET_VIDEOS", "videos"),
-		MinIOResultsBucket: getEnv("MINIO_BUCKET_RESULTS", "results"),
-		SMTPHost:           os.Getenv("SMTP_HOST"),
-		SMTPPort:           getEnv("SMTP_PORT", "2525"),
-		SMTPUser:           os.Getenv("SMTP_USER"),
-		SMTPPassword:       os.Getenv("SMTP_PASSWORD"),
-		SMTPFrom:           getEnv("SMTP_FROM", "no-reply@fiapx.local"),
+		Port:                getEnv("PORT", "8080"),
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		JWTSecret:           os.Getenv("JWT_SECRET"),
+		RabbitMQURL:         os.Getenv("RABBITMQ_URL"),
+		MinIOEndpoint:       os.Getenv("MINIO_ENDPOINT"),
+		MinIOPublicEndpoint: getEnv("MINIO_PUBLIC_ENDPOINT", os.Getenv("MINIO_ENDPOINT")),
+		MinIOAccessKey:      os.Getenv("MINIO_ACCESS_KEY"),
+		MinIOSecretKey:      os.Getenv("MINIO_SECRET_KEY"),
+		MinIOVideosBucket:   getEnv("MINIO_BUCKET_VIDEOS", "videos"),
+		MinIOResultsBucket:  getEnv("MINIO_BUCKET_RESULTS", "results"),
+		SMTPHost:            os.Getenv("SMTP_HOST"),
+		SMTPPort:            getEnv("SMTP_PORT", "2525"),
+		SMTPUser:            os.Getenv("SMTP_USER"),
+		SMTPPassword:        os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:            getEnv("SMTP_FROM", "no-reply@fiapx.local"),
+		FrontendOrigin:      getEnv("FRONTEND_ORIGIN", "http://localhost:3000"),
 	}
 }
 

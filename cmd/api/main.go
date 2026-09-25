@@ -11,6 +11,7 @@ import (
 	identityjwt "video-processor/internal/identity/jwt"
 	identitypostgres "video-processor/internal/identity/postgres"
 	"video-processor/internal/platform/config"
+	"video-processor/internal/platform/httpcors"
 	platformpostgres "video-processor/internal/platform/postgres"
 	platformrabbitmq "video-processor/internal/platform/rabbitmq"
 	videoapplication "video-processor/internal/videoprocessing/application"
@@ -43,7 +44,7 @@ func main() {
 	}
 
 	storageClient, err := videostorage.NewClient(
-		cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
+		cfg.MinIOEndpoint, cfg.MinIOPublicEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
 		cfg.MinIOVideosBucket, cfg.MinIOResultsBucket,
 	)
 	if err != nil {
@@ -61,6 +62,7 @@ func main() {
 	videoHandler := videohttp.NewHandler(videoService)
 
 	router := gin.Default()
+	router.Use(httpcors.Middleware(cfg.FrontendOrigin))
 	v1 := router.Group("/api/v1")
 	identityHandler.RegisterRoutes(v1)
 	videoHandler.RegisterRoutes(v1, identityHandler.RequireAuth())

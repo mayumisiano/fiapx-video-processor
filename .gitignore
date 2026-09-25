@@ -27,3 +27,7 @@
 # Env
 .env
 .env.local
+
+
+# Test
+testdata/
