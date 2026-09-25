@@ -22,9 +22,9 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 func (r *Repository) Create(ctx context.Context, req *domain.ProcessingRequest) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO processing_requests
-			(id, user_id, original_filename, format, size_bytes, video_storage_key, status, attempts, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		req.ID, req.UserID, req.Metadata.OriginalName, req.Metadata.Format, req.Metadata.SizeBytes,
+			(id, user_id, user_email, original_filename, format, size_bytes, video_storage_key, status, attempts, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		req.ID, req.UserID, req.UserEmail, req.Metadata.OriginalName, req.Metadata.Format, req.Metadata.SizeBytes,
 		req.VideoStorageKey, req.Status, req.Attempts, req.CreatedAt, req.UpdatedAt,
 	)
 	return err
@@ -32,7 +32,7 @@ func (r *Repository) Create(ctx context.Context, req *domain.ProcessingRequest) 
 
 func (r *Repository) FindByID(ctx context.Context, id uuid.UUID) (*domain.ProcessingRequest, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, user_id, original_filename, format, size_bytes, video_storage_key,
+		`SELECT id, user_id, user_email, original_filename, format, size_bytes, video_storage_key,
 			result_storage_key, frame_count, status, failure_reason, attempts, created_at, updated_at
 		FROM processing_requests WHERE id = $1`,
 		id,
@@ -49,7 +49,7 @@ func (r *Repository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Proces
 
 func (r *Repository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*domain.ProcessingRequest, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, user_id, original_filename, format, size_bytes, video_storage_key,
+		`SELECT id, user_id, user_email, original_filename, format, size_bytes, video_storage_key,
 			result_storage_key, frame_count, status, failure_reason, attempts, created_at, updated_at
 		FROM processing_requests WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
@@ -103,7 +103,7 @@ func scanRequest(s scanner) (*domain.ProcessingRequest, error) {
 	var frameCount *int
 
 	err := s.Scan(
-		&req.ID, &req.UserID, &req.Metadata.OriginalName, &req.Metadata.Format, &req.Metadata.SizeBytes,
+		&req.ID, &req.UserID, &req.UserEmail, &req.Metadata.OriginalName, &req.Metadata.Format, &req.Metadata.SizeBytes,
 		&req.VideoStorageKey, &resultStorageKey, &frameCount, &req.Status, &failureReason, &req.Attempts,
 		&req.CreatedAt, &req.UpdatedAt,
 	)

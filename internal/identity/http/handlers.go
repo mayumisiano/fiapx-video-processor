@@ -3,7 +3,6 @@ package http
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,29 +21,6 @@ func NewHandler(service *application.Service) *Handler {
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.POST("/auth/register", h.Register)
 	r.POST("/auth/login", h.Login)
-}
-
-func (h *Handler) RequireAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		const prefix = "Bearer "
-		header := c.GetHeader("Authorization")
-		if !strings.HasPrefix(header, prefix) {
-			errorResponse(c, http.StatusUnauthorized, "UNAUTHORIZED", "Missing or invalid Authorization header")
-			c.Abort()
-			return
-		}
-
-		claims, err := h.service.Authenticate(strings.TrimPrefix(header, prefix))
-		if err != nil {
-			errorResponse(c, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or expired token")
-			c.Abort()
-			return
-		}
-
-		c.Set("userID", claims.UserID)
-		c.Set("userEmail", claims.Email)
-		c.Next()
-	}
 }
 
 type registerRequest struct {

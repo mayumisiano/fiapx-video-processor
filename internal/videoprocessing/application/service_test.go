@@ -103,7 +103,7 @@ func TestUploadVideo_ValidFile_IsAcceptedAndPublished(t *testing.T) {
 	publisher := &fakePublisher{}
 	svc := newTestService(repo, &fakeStorage{}, publisher, &fakeExtractor{duration: 30})
 
-	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "movie.mp4", bytes.NewReader(mp4Header))
+	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "ada@example.com", "movie.mp4", bytes.NewReader(mp4Header))
 
 	if err != nil {
 		t.Fatalf("UploadVideo() error = %v, want nil", err)
@@ -124,7 +124,7 @@ func TestUploadVideo_ExtensionDoesNotMatchMagicBytes_RejectedWithoutSideEffects(
 	publisher := &fakePublisher{}
 	svc := newTestService(repo, &fakeStorage{}, publisher, &fakeExtractor{duration: 30})
 
-	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "movie.mp4", bytes.NewReader([]byte("not a real video")))
+	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "ada@example.com", "movie.mp4", bytes.NewReader([]byte("not a real video")))
 
 	if err != nil {
 		t.Fatalf("UploadVideo() error = %v, want nil", err)
@@ -143,7 +143,7 @@ func TestUploadVideo_ExtensionDoesNotMatchMagicBytes_RejectedWithoutSideEffects(
 func TestUploadVideo_ExtractorFailsToProbe_RejectedAsCorrupted(t *testing.T) {
 	svc := newTestService(newFakeRepo(), &fakeStorage{}, &fakePublisher{}, &fakeExtractor{err: errors.New("ffprobe: exit status 1")})
 
-	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "movie.mp4", bytes.NewReader(mp4Header))
+	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "ada@example.com", "movie.mp4", bytes.NewReader(mp4Header))
 
 	if err != nil {
 		t.Fatalf("UploadVideo() error = %v, want nil", err)
@@ -156,7 +156,7 @@ func TestUploadVideo_ExtractorFailsToProbe_RejectedAsCorrupted(t *testing.T) {
 func TestUploadVideo_DurationExceedsLimit_RejectedAsSizeExceeded(t *testing.T) {
 	svc := newTestService(newFakeRepo(), &fakeStorage{}, &fakePublisher{}, &fakeExtractor{duration: domain.MaxDurationSeconds + 1})
 
-	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "movie.mp4", bytes.NewReader(mp4Header))
+	outcome, err := svc.UploadVideo(context.Background(), uuid.New(), "ada@example.com", "movie.mp4", bytes.NewReader(mp4Header))
 
 	if err != nil {
 		t.Fatalf("UploadVideo() error = %v, want nil", err)
@@ -167,7 +167,7 @@ func TestUploadVideo_DurationExceedsLimit_RejectedAsSizeExceeded(t *testing.T) {
 }
 
 func completedRequest(userID uuid.UUID, updatedAt time.Time) *domain.ProcessingRequest {
-	req := domain.NewProcessingRequest(userID, domain.VideoMetadata{OriginalName: "movie.mp4", Format: "mp4"}, "videos/movie.mp4")
+	req := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{OriginalName: "movie.mp4", Format: "mp4"}, "videos/movie.mp4")
 	if err := req.StartProcessing(); err != nil {
 		panic(err)
 	}
@@ -200,7 +200,7 @@ func TestGetDownloadURL_CompletedWithinRetention_ReturnsPresignedURL(t *testing.
 
 func TestGetDownloadURL_NotCompleted_ReturnsErrResultNotReady(t *testing.T) {
 	userID := uuid.New()
-	req := domain.NewProcessingRequest(userID, domain.VideoMetadata{Format: "mp4"}, "videos/movie.mp4")
+	req := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{Format: "mp4"}, "videos/movie.mp4")
 	repo := newFakeRepo()
 	repo.byID[req.ID] = req
 	svc := newTestService(repo, &fakeStorage{}, &fakePublisher{}, &fakeExtractor{})
@@ -240,7 +240,7 @@ func TestGetDownloadURL_DifferentOwner_ReturnsErrRequestNotFound(t *testing.T) {
 }
 
 func failedRequest(userID uuid.UUID) *domain.ProcessingRequest {
-	req := domain.NewProcessingRequest(userID, domain.VideoMetadata{OriginalName: "movie.mp4", Format: "mp4"}, "videos/movie.mp4")
+	req := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{OriginalName: "movie.mp4", Format: "mp4"}, "videos/movie.mp4")
 	if err := req.StartProcessing(); err != nil {
 		panic(err)
 	}
@@ -273,7 +273,7 @@ func TestRetryVideo_FailedWithVideoAvailable_ResetsAndPublishes(t *testing.T) {
 
 func TestRetryVideo_NotFailed_ReturnsErrNotFailed(t *testing.T) {
 	userID := uuid.New()
-	req := domain.NewProcessingRequest(userID, domain.VideoMetadata{Format: "mp4"}, "videos/movie.mp4")
+	req := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{Format: "mp4"}, "videos/movie.mp4")
 	repo := newFakeRepo()
 	repo.byID[req.ID] = req
 	svc := newTestService(repo, &fakeStorage{}, &fakePublisher{}, &fakeExtractor{})

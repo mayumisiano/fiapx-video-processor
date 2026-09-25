@@ -61,6 +61,7 @@ type ProcessingResult struct {
 type ProcessingRequest struct {
 	ID              uuid.UUID
 	UserID          uuid.UUID
+	UserEmail       string
 	Metadata        VideoMetadata
 	VideoStorageKey string
 	Status          Status
@@ -71,11 +72,17 @@ type ProcessingRequest struct {
 	UpdatedAt       time.Time
 }
 
-func NewProcessingRequest(userID uuid.UUID, metadata VideoMetadata, videoStorageKey string) *ProcessingRequest {
+// NewProcessingRequest takes userEmail as a value copied from the trusted
+// JWT claim at request time (Identity → Video Processing is a Conformist
+// relationship — see docs/bounded-contexts.md). Video Processing owns its
+// own database and never queries Identity's afterwards, including from the
+// worker when it sends the outcome notification.
+func NewProcessingRequest(userID uuid.UUID, userEmail string, metadata VideoMetadata, videoStorageKey string) *ProcessingRequest {
 	now := time.Now()
 	return &ProcessingRequest{
 		ID:              uuid.New(),
 		UserID:          userID,
+		UserEmail:       userEmail,
 		Metadata:        metadata,
 		VideoStorageKey: videoStorageKey,
 		Status:          StatusPending,

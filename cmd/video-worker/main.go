@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 
-	identitypostgres "video-processor/internal/identity/postgres"
 	notificationsmtp "video-processor/internal/notification/smtp"
 	"video-processor/internal/platform/config"
 	platformpostgres "video-processor/internal/platform/postgres"
@@ -21,7 +20,7 @@ func main() {
 	cfg := config.Load()
 	ctx := context.Background()
 
-	pool, err := platformpostgres.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := platformpostgres.NewPool(ctx, cfg.VideoDatabaseURL)
 	if err != nil {
 		log.Fatalf("connect to postgres: %v", err)
 	}
@@ -47,11 +46,13 @@ func main() {
 	}
 
 	repo := videopostgres.NewRepository(pool)
-	userRepo := identitypostgres.NewRepository(pool)
 	mailer := notificationsmtp.NewMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)
 	extractor := videoffmpeg.NewExtractor()
 
-	processor := videoapplication.NewProcessor(repo, storageClient, extractor, userRepo, mailer)
+	// No dependency on Identity: the notified email is req.UserEmail, a
+	// value already carried on the ProcessingRequest since upload time
+	// (see docs/adr/0007).
+	processor := videoapplication.NewProcessor(repo, storageClient, extractor, mailer)
 	consumer := videoworker.NewConsumer(processor)
 
 	deliveries, err := queueConsumer.Consume(ctx)

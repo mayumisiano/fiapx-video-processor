@@ -1,6 +1,10 @@
+-- user_id is an opaque identifier copied from the JWT claim at request
+-- time, not a foreign key: Identity and Video Processing are separate
+-- databases (see docs/adr/0007), so referential integrity across them is
+-- enforced by the trust boundary (a valid signed token), not by Postgres.
 CREATE TABLE processing_requests (
     id                 UUID PRIMARY KEY,
-    user_id            UUID NOT NULL REFERENCES users(id),
+    user_id            UUID NOT NULL,
     original_filename  TEXT NOT NULL,
     format             TEXT NOT NULL,
     size_bytes         BIGINT NOT NULL,

@@ -61,10 +61,6 @@ func (s *Service) Login(ctx context.Context, email, password string) (*AuthResul
 	return s.issueFor(user)
 }
 
-func (s *Service) Authenticate(tokenString string) (*domain.TokenClaims, error) {
-	return s.issuer.Parse(tokenString)
-}
-
 func (s *Service) issueFor(user *domain.User) (*AuthResult, error) {
 	token, err := s.issuer.Issue(user)
 	if err != nil {

@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 
-	identitydomain "video-processor/internal/identity/domain"
 	notificationdomain "video-processor/internal/notification/domain"
 	"video-processor/internal/videoprocessing/domain"
 )
@@ -28,18 +27,19 @@ var failureMessages = map[domain.FailureReason]string{
 
 // Processor is the use case the worker adapter invokes for each queued
 // message. It's a separate type from Service (rather than extra fields on
-// it) so the HTTP adapter's wiring never needs to know about the Identity
-// or Notification contexts.
+// it) so the HTTP adapter's wiring never needs to know about the
+// Notification context. It has no dependency on Identity at all: the
+// request's UserEmail is a value copied at creation time, not looked up
+// here — see domain.NewProcessingRequest.
 type Processor struct {
 	repo      domain.Repository
 	storage   domain.Storage
 	extractor domain.FrameExtractor
-	users     identitydomain.Repository
 	notifier  notificationdomain.Notifier
 }
 
-func NewProcessor(repo domain.Repository, storage domain.Storage, extractor domain.FrameExtractor, users identitydomain.Repository, notifier notificationdomain.Notifier) *Processor {
-	return &Processor{repo: repo, storage: storage, extractor: extractor, users: users, notifier: notifier}
+func NewProcessor(repo domain.Repository, storage domain.Storage, extractor domain.FrameExtractor, notifier notificationdomain.Notifier) *Processor {
+	return &Processor{repo: repo, storage: storage, extractor: extractor, notifier: notifier}
 }
 
 // Process runs one ProcessingRequest end to end. A returned error means an
@@ -96,16 +96,11 @@ func (p *Processor) Process(ctx context.Context, requestID string) error {
 // request's status (docs/use-cases.md UC07 3a, docs/event-storming.md).
 // reason is empty for a success notification.
 func (p *Processor) notifyBestEffort(ctx context.Context, req *domain.ProcessingRequest, reason string) {
-	user, err := p.users.FindByID(ctx, req.UserID)
-	if err != nil {
-		log.Printf("notify request %s: could not load user: %v", req.ID, err)
-		return
-	}
-
+	var err error
 	if reason == "" {
-		err = p.notifier.NotifyCompleted(ctx, user.Email, req.Metadata.OriginalName)
+		err = p.notifier.NotifyCompleted(ctx, req.UserEmail, req.Metadata.OriginalName)
 	} else {
-		err = p.notifier.NotifyFailed(ctx, user.Email, req.Metadata.OriginalName, reason)
+		err = p.notifier.NotifyFailed(ctx, req.UserEmail, req.Metadata.OriginalName, reason)
 	}
 	if err != nil {
 		log.Printf("notify request %s: %v", req.ID, err)

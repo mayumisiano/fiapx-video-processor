@@ -1,10 +1,12 @@
 # API Contract — FIAP X (Video Processing System)
 
-> Contract for the `api` service (see `docs/technical-architecture.md`). Derived from the use cases (`docs/use-cases.md`) and the core domain model (`docs/core-domain.md`). This is the source of truth for both backend implementation and frontend integration (replacing the mocked `lib/api-client.ts` in `fiapx-frontend`).
+> Contract for `identity-api` and `video-api` (see `docs/technical-architecture.md` and `docs/adr/0007`). Derived from the use cases (`docs/use-cases.md`) and the core domain model (`docs/core-domain.md`). This is the source of truth for both backend implementation and frontend integration (replacing the mocked `lib/api-client.ts` in `fiapx-frontend`).
+>
+> Two services, two base URLs — no gateway yet: `/auth/*` is served by `identity-api` (`http://localhost:8081`), everything else (`/videos/*`) by `video-api` (`http://localhost:8080`). Both use the `/api/v1` prefix below.
 
 ## Conventions
 
-- **Base URL**: `/api/v1`
+- **Base URL**: `/api/v1` on each service (see above — `identity-api` vs. `video-api`)
 - **Content-Type**: `application/json`, except for upload (`multipart/form-data`).
 - **Authentication**: `Authorization: Bearer <jwt>` header, required on every route except `POST /auth/register` and `POST /auth/login`.
 - **IDs**: UUID v4 strings.

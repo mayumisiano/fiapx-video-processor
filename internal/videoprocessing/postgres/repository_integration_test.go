@@ -9,36 +9,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"video-processor/internal/platform/postgrestest"
 	"video-processor/internal/videoprocessing/domain"
 	"video-processor/internal/videoprocessing/postgres"
 )
 
-const migrationsDir = "../../../migrations"
-
-// seedUser inserts a row directly (bypassing the Identity context) since
-// processing_requests.user_id has a foreign key into users.
-func seedUser(t *testing.T, pool *pgxpool.Pool, id uuid.UUID) {
-	t.Helper()
-	_, err := pool.Exec(context.Background(),
-		`INSERT INTO users (id, name, email, password_hash) VALUES ($1, 'Test User', $2, 'hash')`,
-		id, id.String()+"@example.com",
-	)
-	if err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-}
+const migrationsDir = "../../../migrations/video"
 
 func TestRepository_CreateAndFindByID(t *testing.T) {
 	pool := postgrestest.Pool(t, migrationsDir)
 	userID := uuid.New()
-	seedUser(t, pool, userID)
 	repo := postgres.NewRepository(pool)
 	ctx := context.Background()
 
-	req := domain.NewProcessingRequest(userID, domain.VideoMetadata{
+	req := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{
 		OriginalName: "movie.mp4", SizeBytes: 2048, Format: "mp4",
 	}, "videos/"+uuid.NewString()+"/movie.mp4")
 
@@ -69,11 +54,10 @@ func TestRepository_FindByID_Unknown_ReturnsErrRequestNotFound(t *testing.T) {
 func TestRepository_Update_PersistsStatusAndResult(t *testing.T) {
 	pool := postgrestest.Pool(t, migrationsDir)
 	userID := uuid.New()
-	seedUser(t, pool, userID)
 	repo := postgres.NewRepository(pool)
 	ctx := context.Background()
 
-	req := domain.NewProcessingRequest(userID, domain.VideoMetadata{OriginalName: "movie.mp4", Format: "mp4"}, "videos/x/movie.mp4")
+	req := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{OriginalName: "movie.mp4", Format: "mp4"}, "videos/x/movie.mp4")
 	if err := repo.Create(ctx, req); err != nil {
 		t.Fatalf("setup Create() error = %v", err)
 	}
@@ -107,15 +91,14 @@ func TestRepository_Update_PersistsStatusAndResult(t *testing.T) {
 func TestRepository_ListByUser_OrdersByCreatedAtDescending(t *testing.T) {
 	pool := postgrestest.Pool(t, migrationsDir)
 	userID := uuid.New()
-	seedUser(t, pool, userID)
 	repo := postgres.NewRepository(pool)
 	ctx := context.Background()
 
-	first := domain.NewProcessingRequest(userID, domain.VideoMetadata{OriginalName: "first.mp4", Format: "mp4"}, "videos/1")
+	first := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{OriginalName: "first.mp4", Format: "mp4"}, "videos/1")
 	if err := repo.Create(ctx, first); err != nil {
 		t.Fatalf("setup Create(first) error = %v", err)
 	}
-	second := domain.NewProcessingRequest(userID, domain.VideoMetadata{OriginalName: "second.mp4", Format: "mp4"}, "videos/2")
+	second := domain.NewProcessingRequest(userID, "ada@example.com", domain.VideoMetadata{OriginalName: "second.mp4", Format: "mp4"}, "videos/2")
 	second.CreatedAt = first.CreatedAt.Add(time.Second)
 	if err := repo.Create(ctx, second); err != nil {
 		t.Fatalf("setup Create(second) error = %v", err)

@@ -3,13 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	identityapplication "video-processor/internal/identity/application"
-	identityhttp "video-processor/internal/identity/http"
-	identityjwt "video-processor/internal/identity/jwt"
-	identitypostgres "video-processor/internal/identity/postgres"
 	"video-processor/internal/platform/config"
 	"video-processor/internal/platform/httpcors"
 	platformpostgres "video-processor/internal/platform/postgres"
@@ -26,7 +23,7 @@ func main() {
 	cfg := config.Load()
 
 	ctx := context.Background()
-	pool, err := platformpostgres.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := platformpostgres.NewPool(ctx, cfg.VideoDatabaseURL)
 	if err != nil {
 		log.Fatalf("connect to postgres: %v", err)
 	}
@@ -51,11 +48,6 @@ func main() {
 		log.Fatalf("connect to minio: %v", err)
 	}
 
-	identityRepo := identitypostgres.NewRepository(pool)
-	issuer := identityjwt.NewIssuer(cfg.JWTSecret)
-	identityService := identityapplication.NewService(identityRepo, issuer)
-	identityHandler := identityhttp.NewHandler(identityService)
-
 	videoRepo := videopostgres.NewRepository(pool)
 	extractor := videoffmpeg.NewExtractor()
 	videoService := videoapplication.NewService(videoRepo, storageClient, publisher, extractor)
@@ -63,9 +55,19 @@ func main() {
 
 	router := gin.Default()
 	router.Use(httpcors.Middleware(cfg.FrontendOrigin))
+
+	// Unversioned: consumed by orchestrators (compose/k8s probes), not API
+	// clients, so it isn't tied to the /api/v1 contract's lifecycle.
+	router.GET("/health", func(c *gin.Context) {
+		if err := pool.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
 	v1 := router.Group("/api/v1")
-	identityHandler.RegisterRoutes(v1)
-	videoHandler.RegisterRoutes(v1, identityHandler.RequireAuth())
+	videoHandler.RegisterRoutes(v1, videohttp.RequireAuth(cfg.JWTSecret))
 
 	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("run server: %v", err)

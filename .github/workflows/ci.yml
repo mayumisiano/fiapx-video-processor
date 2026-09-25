@@ -62,8 +62,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build api image
-        run: docker build -f Dockerfile.api -t fiapx-video-processor-api:ci .
+      - name: Build identity-api image
+        run: docker build -f Dockerfile.identity-api -t fiapx-video-processor-identity-api:ci .
 
-      - name: Build worker image
-        run: docker build -f Dockerfile.worker -t fiapx-video-processor-worker:ci .
+      - name: Build video-api image
+        run: docker build -f Dockerfile.video-api -t fiapx-video-processor-video-api:ci .
+
+      - name: Build video-worker image
+        run: docker build -f Dockerfile.video-worker -t fiapx-video-processor-video-worker:ci .

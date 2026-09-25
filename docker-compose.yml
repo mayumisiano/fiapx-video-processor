@@ -1,16 +1,32 @@
 services:
-  postgres:
+  postgres-identity:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${IDENTITY_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${IDENTITY_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${IDENTITY_POSTGRES_DB}
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      - "${IDENTITY_POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_identity_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${IDENTITY_POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-video:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${VIDEO_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${VIDEO_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${VIDEO_POSTGRES_DB}
+    ports:
+      - "${VIDEO_POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_video_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VIDEO_POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -66,47 +82,80 @@ services:
       mc mb -p local/results
       "
 
-  migrate:
+  migrate-identity:
     image: migrate/migrate:v4.17.1
     depends_on:
-      postgres:
+      postgres-identity:
         condition: service_healthy
     volumes:
-      - ./migrations:/migrations
-    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up"]
+      - ./migrations/identity:/migrations
+    command: ["-path", "/migrations", "-database", "${IDENTITY_DATABASE_URL}", "up"]
 
-  api:
+  migrate-video:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres-video:
+        condition: service_healthy
+    volumes:
+      - ./migrations/video:/migrations
+    command: ["-path", "/migrations", "-database", "${VIDEO_DATABASE_URL}", "up"]
+
+  identity-api:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile.identity-api
     depends_on:
-      postgres:
+      postgres-identity:
+        condition: service_healthy
+      migrate-identity:
+        condition: service_completed_successfully
+    env_file: .env
+    ports:
+      - "${IDENTITY_HOST_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  video-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.video-api
+    depends_on:
+      postgres-video:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       minio:
         condition: service_healthy
-      migrate:
+      migrate-video:
         condition: service_completed_successfully
     env_file: .env
     ports:
       - "${API_HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  worker:
+  video-worker:
     build:
       context: .
-      dockerfile: Dockerfile.worker
+      dockerfile: Dockerfile.video-worker
     depends_on:
-      postgres:
+      postgres-video:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       minio:
         condition: service_healthy
-      migrate:
+      migrate-video:
         condition: service_completed_successfully
     env_file: .env
 
 volumes:
-  postgres_data:
+  postgres_identity_data:
+  postgres_video_data:
   minio_data:

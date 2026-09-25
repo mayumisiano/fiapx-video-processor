@@ -95,15 +95,17 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
+	userEmail := c.GetString("userEmail")
+
 	results := make([]uploadResultItem, 0, len(form.File["videos"]))
 	for _, fileHeader := range form.File["videos"] {
-		results = append(results, h.uploadOne(c, userID, fileHeader))
+		results = append(results, h.uploadOne(c, userID, userEmail, fileHeader))
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"results": results})
 }
 
-func (h *Handler) uploadOne(c *gin.Context, userID uuid.UUID, fileHeader *multipart.FileHeader) uploadResultItem {
+func (h *Handler) uploadOne(c *gin.Context, userID uuid.UUID, userEmail string, fileHeader *multipart.FileHeader) uploadResultItem {
 	item := uploadResultItem{FileName: fileHeader.Filename}
 
 	src, err := fileHeader.Open()
@@ -113,7 +115,7 @@ func (h *Handler) uploadOne(c *gin.Context, userID uuid.UUID, fileHeader *multip
 	}
 	defer src.Close()
 
-	outcome, err := h.service.UploadVideo(c.Request.Context(), userID, fileHeader.Filename, src)
+	outcome, err := h.service.UploadVideo(c.Request.Context(), userID, userEmail, fileHeader.Filename, src)
 	if err != nil {
 		item.Error = &gin.H{"code": "INTERNAL_ERROR", "message": "Could not process upload"}
 		return item

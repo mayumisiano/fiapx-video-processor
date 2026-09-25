@@ -49,13 +49,6 @@ func (fakeIssuer) Issue(user *domain.User) (string, error) {
 	return "token-for-" + user.ID.String(), nil
 }
 
-func (fakeIssuer) Parse(tokenString string) (*domain.TokenClaims, error) {
-	if tokenString == "" {
-		return nil, domain.ErrInvalidToken
-	}
-	return &domain.TokenClaims{UserID: tokenString}, nil
-}
-
 func TestRegister_NewEmail_ReturnsUserAndToken(t *testing.T) {
 	svc := application.NewService(newFakeRepo(), fakeIssuer{})
 
@@ -130,18 +123,5 @@ func TestLogin_UnknownEmail_ReturnsErrInvalidCredentials(t *testing.T) {
 
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Errorf("Login() error = %v, want %v (should not leak ErrUserNotFound)", err, domain.ErrInvalidCredentials)
-	}
-}
-
-func TestAuthenticate_DelegatesToIssuer(t *testing.T) {
-	svc := application.NewService(newFakeRepo(), fakeIssuer{})
-
-	claims, err := svc.Authenticate("some-token")
-
-	if err != nil {
-		t.Fatalf("Authenticate() error = %v, want nil", err)
-	}
-	if claims.UserID != "some-token" {
-		t.Errorf("claims.UserID = %q, want %q", claims.UserID, "some-token")
 	}
 }

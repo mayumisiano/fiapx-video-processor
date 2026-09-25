@@ -10,7 +10,7 @@ import (
 )
 
 func newTestRequest() *domain.ProcessingRequest {
-	return domain.NewProcessingRequest(uuid.New(), domain.VideoMetadata{
+	return domain.NewProcessingRequest(uuid.New(), "ada@example.com", domain.VideoMetadata{
 		OriginalName: "movie.mp4",
 		SizeBytes:    1024,
 		Format:       "mp4",

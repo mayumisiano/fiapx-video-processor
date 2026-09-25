@@ -15,7 +15,7 @@ import (
 	"video-processor/internal/platform/postgrestest"
 )
 
-const migrationsDir = "../../../migrations"
+const migrationsDir = "../../../migrations/identity"
 
 func TestRepository_CreateAndFindByEmail(t *testing.T) {
 	pool := postgrestest.Pool(t, migrationsDir)

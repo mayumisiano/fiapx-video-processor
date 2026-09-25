@@ -39,13 +39,3 @@ func (i *Issuer) Issue(user *domain.User) (string, error) {
 	return token.SignedString(i.secret)
 }
 
-func (i *Issuer) Parse(tokenString string) (*domain.TokenClaims, error) {
-	c := &claims{}
-	token, err := jwtlib.ParseWithClaims(tokenString, c, func(t *jwtlib.Token) (interface{}, error) {
-		return i.secret, nil
-	})
-	if err != nil || !token.Valid {
-		return nil, domain.ErrInvalidToken
-	}
-	return &domain.TokenClaims{UserID: c.UserID, Email: c.Email}, nil
-}

@@ -2,9 +2,15 @@ package config
 
 import "os"
 
+// Config is shared across all three binaries (identity-api, video-api,
+// video-worker) for simplicity; each one only reads the fields it needs,
+// which is an accepted trade-off over three parallel config packages —
+// unused env vars are harmless (see docs/adr/0007).
 type Config struct {
 	Port                string
-	DatabaseURL         string
+	IdentityPort        string
+	IdentityDatabaseURL string
+	VideoDatabaseURL    string
 	JWTSecret           string
 	RabbitMQURL         string
 	MinIOEndpoint       string
@@ -24,7 +30,9 @@ type Config struct {
 func Load() Config {
 	return Config{
 		Port:                getEnv("PORT", "8080"),
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		IdentityPort:        getEnv("IDENTITY_PORT", "8081"),
+		IdentityDatabaseURL: os.Getenv("IDENTITY_DATABASE_URL"),
+		VideoDatabaseURL:    os.Getenv("VIDEO_DATABASE_URL"),
 		JWTSecret:           os.Getenv("JWT_SECRET"),
 		RabbitMQURL:         os.Getenv("RABBITMQ_URL"),
 		MinIOEndpoint:       os.Getenv("MINIO_ENDPOINT"),

@@ -33,7 +33,7 @@ func NewService(repo domain.Repository, storage domain.Storage, publisher domain
 	return &Service{repo: repo, storage: storage, publisher: publisher, extractor: extractor}
 }
 
-func (s *Service) UploadVideo(ctx context.Context, userID uuid.UUID, fileName string, src io.Reader) (*UploadOutcome, error) {
+func (s *Service) UploadVideo(ctx context.Context, userID uuid.UUID, userEmail, fileName string, src io.Reader) (*UploadOutcome, error) {
 	tempPath, sizeBytes, magicBytes, err := saveToTemp(src)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (s *Service) UploadVideo(ctx context.Context, userID uuid.UUID, fileName st
 		return &UploadOutcome{Reason: reason}, nil
 	}
 
-	req := domain.NewProcessingRequest(userID, metadata, "")
+	req := domain.NewProcessingRequest(userID, userEmail, metadata, "")
 	req.VideoStorageKey = req.ID.String() + "/" + fileName
 
 	if err := s.storage.UploadVideo(ctx, req.VideoStorageKey, tempPath, "video/"+format); err != nil {
