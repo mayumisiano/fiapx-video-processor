@@ -10,9 +10,15 @@ scrape_configs:
     static_configs:
       - targets: ["video-api:8080"]
 
+  # dns_sd_configs, not static_configs: the latter resolves the hostname
+  # once, so scaling past 1 replica would silently scrape only one of
+  # them under a shared "instance" label, hiding the rest from Grafana.
   - job_name: video-worker
-    static_configs:
-      - targets: ["video-worker:9102"]
+    dns_sd_configs:
+      - names: ["video-worker"]
+        type: A
+        port: 9102
+        refresh_interval: 15s
 
   - job_name: rabbitmq
     static_configs:

@@ -127,8 +127,10 @@ services:
       minio:
         condition: service_healthy
     env_file: .env
-    ports:
-      - "9102:9102"
+    # No host port published: Prometheus scrapes video-worker:9102 over
+    # the internal Docker network, and a fixed host mapping would collide
+    # across replicas when scaled (docker compose up --scale
+    # video-worker=N) — the exact scenario this service exists to serve.
 
   prometheus:
     image: prom/prometheus:v2.55.1

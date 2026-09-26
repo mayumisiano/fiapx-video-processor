@@ -41,6 +41,16 @@ Metrics and dashboard (see [`docs/adr/0008`](docs/adr/0008-minimal-observability
 - Prometheus: [http://localhost:9090](http://localhost:9090) (targets: `identity-api`, `video-api`, `video-worker`, `rabbitmq`)
 - Grafana: [http://localhost:3000](http://localhost:3000) (anonymous viewer access, dashboard "FIAP X - Video Processing Overview" pre-provisioned)
 
+## Load test
+
+```bash
+docker compose up --build --scale video-worker=3
+brew install k6   # or see https://k6.io/docs/get-started/installation/
+k6 run scripts/loadtest/upload_stress.js
+```
+
+Fires 20 (configurable via `--env VUS=N`) concurrent real video uploads at `video-api` and asserts every single one is accepted and reaches `COMPLETED` — evidence for "process more than one video at a time" and "don't lose a request under a spike" (`docs/adr/0012`). Watch it land and drain live on Grafana ([http://localhost:3000](http://localhost:3000)) while it runs.
+
 ## Tests
 
 ```bash

@@ -8,8 +8,24 @@ on:
 
 env:
   GO_VERSION: "1.25"
+  GOLANGCI_LINT_VERSION: "v2.5.0"
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
@@ -24,7 +40,22 @@ jobs:
         run: go vet ./...
 
       - name: Unit tests
-        run: go test ./... -race -cover
+        run: go test ./... -race -coverprofile=coverage.out
+
+      # A flat repo-wide coverage % is misleading here: several packages
+      # are thin infra adapters (postgres, rabbitmq, minio, redis, jwt)
+      # exercised by integration tests, not unit tests, so they sit at 0%
+      # unit coverage by design. This gate only measures the packages
+      # that are supposed to be unit-testable without any infra: the
+      # domain and application layers of each bounded context.
+      - name: Enforce coverage threshold on domain/application layers
+        run: |
+          go test ./internal/identity/domain/... ./internal/identity/application/... \
+            ./internal/videoprocessing/domain/... ./internal/videoprocessing/application/... \
+            -coverprofile=business-logic-coverage.out
+          total=$(go tool cover -func=business-logic-coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%')
+          echo "Domain/application coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { exit (t + 0 < 70) }'
 
   integration-tests:
     name: Integration tests
@@ -52,9 +83,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3.13-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgres://fiapx:fiapx@localhost:5432/fiapx?sslmode=disable
       REDIS_URL: redis://localhost:6379/0
+      RABBITMQ_URL: amqp://guest:guest@localhost:5672/
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: fiapx
+      MINIO_SECRET_KEY: fiapx12345
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -62,8 +106,30 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      # MinIO needs "server /data" as its command, which the `services:`
+      # block has no field for (GitHub Actions services only start a
+      # container's own default CMD) — so it's started as a plain
+      # container instead, with the same wait-for-health pattern the
+      # `services:` block gives the others for free.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=${{ env.MINIO_ACCESS_KEY }} \
+            -e MINIO_ROOT_PASSWORD=${{ env.MINIO_SECRET_KEY }} \
+            minio/minio server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && exit 0
+            sleep 2
+          done
+          echo "MinIO did not become healthy in time" >&2
+          exit 1
+
       - name: Integration tests
         run: go test -tags=integration ./... -race
+
+      - name: Stop MinIO
+        if: always()
+        run: docker rm -f minio || true
 
   build-images:
     name: Build Docker images
@@ -80,3 +146,52 @@ jobs:
 
       - name: Build video-worker image
         run: docker build -f Dockerfile.video-worker -t fiapx-video-processor-video-worker:ci .
+
+  compose-smoke-test:
+    name: Docker Compose smoke test
+    runs-on: ubuntu-latest
+    needs: [build-images]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare env file
+        run: cp .env.example .env
+
+      - name: Start the stack
+        run: docker compose up --build -d
+
+      - name: Wait for identity-api and video-api to report healthy
+        run: |
+          for service in identity-api video-api; do
+            for i in $(seq 1 30); do
+              status=$(docker inspect --format='{{.State.Health.Status}}' "fiapx-video-processor-${service}-1" 2>/dev/null || echo "starting")
+              if [ "$status" = "healthy" ]; then
+                echo "$service is healthy"
+                break
+              fi
+              sleep 2
+            done
+            if [ "$status" != "healthy" ]; then
+              echo "$service never became healthy" >&2
+              docker compose logs "$service"
+              exit 1
+            fi
+          done
+
+      - name: Fail if any container exited unexpectedly
+        run: |
+          exited=$(docker compose ps --status=exited --format '{{.Name}}')
+          if [ -n "$exited" ]; then
+            echo "Found exited containers, expected none:" >&2
+            echo "$exited" >&2
+            docker compose logs
+            exit 1
+          fi
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
