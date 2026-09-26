@@ -9,6 +9,7 @@ import "os"
 type Config struct {
 	Port                string
 	IdentityPort        string
+	WorkerMetricsPort   string
 	IdentityDatabaseURL string
 	VideoDatabaseURL    string
 	JWTSecret           string
@@ -31,6 +32,7 @@ func Load() Config {
 	return Config{
 		Port:                getEnv("PORT", "8080"),
 		IdentityPort:        getEnv("IDENTITY_PORT", "8081"),
+		WorkerMetricsPort:   getEnv("WORKER_METRICS_PORT", "9102"),
 		IdentityDatabaseURL: os.Getenv("IDENTITY_DATABASE_URL"),
 		VideoDatabaseURL:    os.Getenv("VIDEO_DATABASE_URL"),
 		JWTSecret:           os.Getenv("JWT_SECRET"),

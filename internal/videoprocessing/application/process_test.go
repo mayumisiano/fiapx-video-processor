@@ -42,10 +42,13 @@ func TestProcess_HappyPath_CompletesAndNotifiesSuccess(t *testing.T) {
 	extractor := &fakeExtractor{extractCount: 3}
 	processor := application.NewProcessor(repo, &fakeStorage{}, extractor, notifier)
 
-	err := processor.Process(context.Background(), req.ID.String())
+	status, err := processor.Process(context.Background(), req.ID.String())
 
 	if err != nil {
 		t.Fatalf("Process() error = %v, want nil", err)
+	}
+	if status != domain.StatusCompleted {
+		t.Errorf("Process() status = %q, want %q", status, domain.StatusCompleted)
 	}
 	stored := repo.byID[req.ID]
 	if stored.Status != domain.StatusCompleted {
@@ -70,10 +73,13 @@ func TestProcess_ExtractionFails_RecordsFailureAndNotifies(t *testing.T) {
 	extractor := &fakeExtractor{extractCount: 0, extractErr: errors.New("ffmpeg: exit status 1")}
 	processor := application.NewProcessor(repo, &fakeStorage{}, extractor, notifier)
 
-	err := processor.Process(context.Background(), req.ID.String())
+	status, err := processor.Process(context.Background(), req.ID.String())
 
 	if err != nil {
 		t.Fatalf("Process() error = %v, want nil (business failure is not an infra error)", err)
+	}
+	if status != domain.StatusFailed {
+		t.Errorf("Process() status = %q, want %q", status, domain.StatusFailed)
 	}
 	stored := repo.byID[req.ID]
 	if stored.Status != domain.StatusFailed {
@@ -95,7 +101,7 @@ func TestProcess_NotificationFailure_DoesNotAffectPersistedState(t *testing.T) {
 	extractor := &fakeExtractor{extractCount: 3}
 	processor := application.NewProcessor(repo, &fakeStorage{}, extractor, notifier)
 
-	err := processor.Process(context.Background(), req.ID.String())
+	_, err := processor.Process(context.Background(), req.ID.String())
 
 	if err != nil {
 		t.Fatalf("Process() error = %v, want nil (notification failures must be best-effort)", err)
@@ -109,7 +115,7 @@ func TestProcess_UnknownRequestID_ReturnsInfraError(t *testing.T) {
 	repo := newFakeRepo()
 	processor := application.NewProcessor(repo, &fakeStorage{}, &fakeExtractor{}, &fakeNotifier{})
 
-	err := processor.Process(context.Background(), uuid.New().String())
+	_, err := processor.Process(context.Background(), uuid.New().String())
 
 	if err == nil {
 		t.Fatalf("Process() error = nil, want an error for a request the repository cannot find")
@@ -126,7 +132,7 @@ func TestProcess_AlreadyProcessing_ReturnsNilWithoutChangingState(t *testing.T) 
 	notifier := &fakeNotifier{}
 	processor := application.NewProcessor(repo, &fakeStorage{}, &fakeExtractor{extractCount: 3}, notifier)
 
-	err := processor.Process(context.Background(), req.ID.String())
+	_, err := processor.Process(context.Background(), req.ID.String())
 
 	if err != nil {
 		t.Fatalf("Process() error = %v, want nil for an invalid transition that is not an infra failure", err)

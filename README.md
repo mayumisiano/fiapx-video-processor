@@ -21,7 +21,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts two Postgres instances (one per service), Redis, RabbitMQ, MinIO, runs both services' migrations, and boots `identity-api`, `video-api`, and `video-worker`.
+This starts two Postgres instances (one per service), Redis, RabbitMQ, MinIO, and boots `identity-api`, `video-api`, and `video-worker` — each of which applies its own database migrations and (for the two Video Processing services) ensures its MinIO buckets exist on startup, no separate init container involved (`docs/adr/0009`).
 
 To demonstrate concurrent processing of multiple videos (see [`docs/technical-architecture.md`](docs/technical-architecture.md) §4), scale the worker:
 
@@ -35,6 +35,11 @@ Check that each API is healthy (its own Postgres connectivity included):
 curl http://localhost:8081/health   # identity-api
 curl http://localhost:8080/health   # video-api
 ```
+
+Metrics and dashboard (see [`docs/adr/0008`](docs/adr/0008-minimal-observability-with-prometheus-and-grafana.md)):
+
+- Prometheus: [http://localhost:9090](http://localhost:9090) (targets: `identity-api`, `video-api`, `video-worker`, `rabbitmq`)
+- Grafana: [http://localhost:3000](http://localhost:3000) (anonymous viewer access, dashboard "FIAP X - Video Processing Overview" pre-provisioned)
 
 ## Tests
 
@@ -63,5 +68,5 @@ The same pipeline runs in CI (`.github/workflows/ci.yml`): unit tests → integr
 ## Challenge deliverables
 
 - **Architecture documentation**: above.
-- **Database creation script**: [`migrations/`](migrations/) (golang-migrate, applied automatically by the compose `migrate` service).
+- **Database creation script**: [`migrations/`](migrations/) (golang-migrate, embedded in and applied automatically by each service on startup — `docs/adr/0009`).
 - **Code**: this repository.

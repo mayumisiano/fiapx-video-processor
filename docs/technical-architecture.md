@@ -15,6 +15,7 @@
 | Containers | **Docker + Docker Compose** |
 | CI/CD | **GitHub Actions** |
 | Notification | **SMTP** (Mailtrap in dev / real provider in production) |
+| Monitoring | **Prometheus + Grafana** (`docs/adr/0008`) |
 
 This is a conscious decision favoring **simplicity and low execution risk**, not the "most impressive stack possible" — see section 6 (alternatives evaluated and discarded) for the full reasoning.
 
@@ -105,6 +106,7 @@ Stores original videos and result packages (`.zip`). Chosen instead of local con
 | Tests that ensure quality | Unit (domain rules) + integration (real Postgres/RabbitMQ via Docker in CI) |
 | CI/CD | GitHub Actions: lint → tests → Docker image build |
 | Microservices development | Three independently deployable services (`identity-api`, `video-api`, `video-worker`), each with its own database — see `docs/adr/0007` |
+| Monitoring | Prometheus scraping all three services + RabbitMQ, one provisioned Grafana dashboard (`localhost:3000`) — see §9, `docs/adr/0008` |
 
 ## 5. Service split, by bounded context
 
@@ -140,11 +142,16 @@ Logged here because they're part of the decision process and are relevant materi
 
 ## 9. Observability
 
-**Implemented**: `GET /health` on both `identity-api` and `video-api` — pings each service's own Postgres pool and returns `503` if unreachable, so it reflects actual readiness rather than just process liveness. Used as the `docker-compose.yml` healthcheck for both services.
+**Implemented** (`docs/adr/0008`):
+- `GET /health` on both `identity-api` and `video-api` — pings each service's own Postgres pool and returns `503` if unreachable, so it reflects actual readiness rather than just process liveness. Used as the `docker-compose.yml` healthcheck for both services.
+- `GET /metrics` on `identity-api` and `video-api` (Prometheus format): HTTP request rate and latency, by service/method/route/status.
+- `video-worker` exposes its own standalone `/metrics` (no HTTP router otherwise): `videos_processed_total{status}` (`completed`/`failed`/`infra_error`) and `video_processing_duration_seconds`.
+- RabbitMQ's native `rabbitmq_prometheus` plugin (queue depth, message rates) — zero application code.
+- `prometheus` + `grafana` services in `docker-compose.yml`, both provisioned from `observability/` (scrape config, datasource, one dashboard with 5 panels) — `docker compose up` gives a working dashboard at `localhost:3000` with no manual setup.
 
 **Planned, not yet implemented**: structured (JSON) logs across all three binaries — they currently use the standard `log` package (plain text) and Gin's default text logger, not JSON. `internal/platform/logging` exists as a placeholder package for this but has no code yet.
 
-**Stretch goal, if time allows**: Prometheus metrics (queue depth, processing time, error rate) + a Grafana dashboard versioned in the repository. Not a mandatory requirement of the brief (it's a stack suggestion, not a functional requirement), so it doesn't jeopardize the main delivery if cut.
+**Explicitly out of scope** (`docs/adr/0008`): distributed tracing, alerting rules, log aggregation (ELK/Loki) — logged as conscious cuts for the hackathon's scope, not oversights.
 
 ## 10. Tests and CI/CD
 

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	"video-processor/internal/platform/metrics"
 	"video-processor/internal/videoprocessing/application"
 	"video-processor/internal/videoprocessing/queue"
 )
@@ -32,12 +35,18 @@ func (c *Consumer) Run(ctx context.Context, deliveries <-chan amqp.Delivery) {
 			continue
 		}
 
-		if err := c.processor.Process(ctx, msg.RequestID); err != nil {
+		start := time.Now()
+		status, err := c.processor.Process(ctx, msg.RequestID)
+		metrics.ProcessingDuration.Observe(time.Since(start).Seconds())
+
+		if err != nil {
 			log.Printf("processing request %s failed: %v", msg.RequestID, err)
+			metrics.VideosProcessedTotal.WithLabelValues("infra_error").Inc()
 			_ = delivery.Nack(false, false)
 			continue
 		}
 
+		metrics.VideosProcessedTotal.WithLabelValues(strings.ToLower(string(status))).Inc()
 		_ = delivery.Ack(false)
 	}
 }

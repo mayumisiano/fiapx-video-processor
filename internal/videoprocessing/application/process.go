@@ -45,24 +45,29 @@ func NewProcessor(repo domain.Repository, storage domain.Storage, extractor doma
 // Process runs one ProcessingRequest end to end. A returned error means an
 // infrastructure failure the caller should route to the dead-letter queue —
 // a business failure (bad video content) is recorded on the aggregate and
-// persisted, and Process returns nil, since it's a valid documented outcome
-// rather than a message-processing failure (docs/technical-architecture.md §7).
-func (p *Processor) Process(ctx context.Context, requestID string) error {
+// persisted, and Process returns a nil error, since it's a valid documented
+// outcome rather than a message-processing failure
+// (docs/technical-architecture.md §7). The returned Status reports that
+// business outcome (StatusCompleted/StatusFailed) so callers — e.g. the
+// worker's metrics — can distinguish it without a second query; on an
+// infrastructure error, the zero Status ("") is returned and must be
+// ignored in favor of the error.
+func (p *Processor) Process(ctx context.Context, requestID string) (domain.Status, error) {
 	id, err := uuid.Parse(requestID)
 	if err != nil {
-		return fmt.Errorf("invalid request id %q: %w", requestID, err)
+		return "", fmt.Errorf("invalid request id %q: %w", requestID, err)
 	}
 
 	req, err := p.repo.FindByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("load request: %w", err)
+		return "", fmt.Errorf("load request: %w", err)
 	}
 
 	if err := req.StartProcessing(); err != nil {
-		return nil
+		return req.Status, nil
 	}
 	if err := p.repo.Update(ctx, req); err != nil {
-		return fmt.Errorf("mark processing: %w", err)
+		return "", fmt.Errorf("mark processing: %w", err)
 	}
 
 	result, procErr := p.extractAndPackage(ctx, req)
@@ -72,23 +77,23 @@ func (p *Processor) Process(ctx context.Context, requestID string) error {
 			reason = domain.FailureCorruptedFile
 		}
 		if err := req.RecordFailure(reason); err != nil {
-			return fmt.Errorf("record failure: %w", err)
+			return "", fmt.Errorf("record failure: %w", err)
 		}
 		if err := p.repo.Update(ctx, req); err != nil {
-			return err
+			return "", err
 		}
 		p.notifyBestEffort(ctx, req, failureMessages[reason])
-		return nil
+		return req.Status, nil
 	}
 
 	if err := req.CompleteProcessing(*result); err != nil {
-		return fmt.Errorf("complete processing: %w", err)
+		return "", fmt.Errorf("complete processing: %w", err)
 	}
 	if err := p.repo.Update(ctx, req); err != nil {
-		return err
+		return "", err
 	}
 	p.notifyBestEffort(ctx, req, "")
-	return nil
+	return req.Status, nil
 }
 
 // notifyBestEffort sends the outcome email after the aggregate's state is

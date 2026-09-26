@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -40,6 +41,26 @@ func NewClient(endpoint, publicEndpoint, accessKey, secretKey, videosBucket, res
 	}
 
 	return &Client{mc: mc, presignClient: presignClient, videosBucket: videosBucket, resultsBucket: resultsBucket}, nil
+}
+
+// EnsureBuckets creates the videos/results buckets if they don't already
+// exist. Idempotent and safe to call from every video-api/video-worker
+// replica on startup — replacing the separate createbuckets init
+// container (docs/adr/0009).
+func (c *Client) EnsureBuckets(ctx context.Context) error {
+	for _, bucket := range []string{c.videosBucket, c.resultsBucket} {
+		exists, err := c.mc.BucketExists(ctx, bucket)
+		if err != nil {
+			return fmt.Errorf("check bucket %q: %w", bucket, err)
+		}
+		if exists {
+			continue
+		}
+		if err := c.mc.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
+			return fmt.Errorf("create bucket %q: %w", bucket, err)
+		}
+	}
+	return nil
 }
 
 func (c *Client) UploadVideo(ctx context.Context, key, filePath, contentType string) error {

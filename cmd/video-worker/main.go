@@ -6,6 +6,8 @@ import (
 
 	notificationsmtp "video-processor/internal/notification/smtp"
 	"video-processor/internal/platform/config"
+	"video-processor/internal/platform/metrics"
+	"video-processor/internal/platform/migrate"
 	platformpostgres "video-processor/internal/platform/postgres"
 	platformrabbitmq "video-processor/internal/platform/rabbitmq"
 	videoapplication "video-processor/internal/videoprocessing/application"
@@ -14,11 +16,16 @@ import (
 	videoqueue "video-processor/internal/videoprocessing/queue"
 	videostorage "video-processor/internal/videoprocessing/storage"
 	videoworker "video-processor/internal/videoprocessing/worker"
+	videomigrations "video-processor/migrations/video"
 )
 
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()
+
+	if err := migrate.Run(cfg.VideoDatabaseURL, videomigrations.FS); err != nil {
+		log.Fatalf("apply migrations: %v", err)
+	}
 
 	pool, err := platformpostgres.NewPool(ctx, cfg.VideoDatabaseURL)
 	if err != nil {
@@ -44,6 +51,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("connect to minio: %v", err)
 	}
+	if err := storageClient.EnsureBuckets(ctx); err != nil {
+		log.Fatalf("ensure minio buckets: %v", err)
+	}
 
 	repo := videopostgres.NewRepository(pool)
 	mailer := notificationsmtp.NewMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)
@@ -59,6 +69,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("consume queue: %v", err)
 	}
+
+	metrics.ServeStandalone(":" + cfg.WorkerMetricsPort)
 
 	log.Println("worker ready, waiting for messages")
 	consumer.Run(ctx, deliveries)
