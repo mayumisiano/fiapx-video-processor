@@ -12,6 +12,7 @@ type Config struct {
 	WorkerMetricsPort   string
 	IdentityDatabaseURL string
 	VideoDatabaseURL    string
+	RedisURL            string
 	JWTSecret           string
 	RabbitMQURL         string
 	MinIOEndpoint       string
@@ -35,6 +36,7 @@ func Load() Config {
 		WorkerMetricsPort:   getEnv("WORKER_METRICS_PORT", "9102"),
 		IdentityDatabaseURL: os.Getenv("IDENTITY_DATABASE_URL"),
 		VideoDatabaseURL:    os.Getenv("VIDEO_DATABASE_URL"),
+		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		JWTSecret:           os.Getenv("JWT_SECRET"),
 		RabbitMQURL:         os.Getenv("RABBITMQ_URL"),
 		MinIOEndpoint:       os.Getenv("MINIO_ENDPOINT"),

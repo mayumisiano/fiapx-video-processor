@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "FIAP X Video Processor — Runtime Architecture",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "browser", "type": "external", "label": "Web Client", "sublabel": "fiapx-web (browser)", "pos": [40, 300], "size": [130, 60] },
+    { "id": "api", "type": "backend", "label": "API Server", "sublabel": "Gin :8080 /api/v1", "tag": "identity + video contexts", "pos": [280, 300], "size": [140, 64] },
+    { "id": "rabbitmq", "type": "messagebus", "label": "RabbitMQ", "sublabel": "job queue + DLX", "pos": [540, 300], "size": [130, 60] },
+    { "id": "worker", "type": "backend", "label": "Video Worker", "sublabel": "ffmpeg frame extraction", "pos": [780, 300], "size": [140, 64] },
+    { "id": "minio", "type": "cloud", "label": "MinIO", "sublabel": "videos + results buckets", "tag": "presigned URLs", "pos": [1030, 300], "size": [140, 64] },
+    { "id": "migrate", "type": "cloud", "label": "Migrate", "sublabel": "golang-migrate, one-shot", "pos": [340, 460], "size": [130, 56] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "users, videos, jobs", "pos": [540, 460], "size": [130, 60] },
+    { "id": "smtp", "type": "external", "label": "SMTP Relay", "sublabel": "notification email", "pos": [780, 460], "size": [140, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Backend trust boundary — Docker Compose network", "wraps": ["api", "rabbitmq", "worker", "minio", "postgres", "migrate"], "pad": 20 },
+    { "kind": "security-group", "label": "sg: JWT-authenticated :8080", "wraps": ["api"], "pad": 10 }
+  ],
+  "connections": [
+    { "id": "browser-to-api", "from": "browser", "to": "api", "label": "HTTPS + JWT (upload/status)", "variant": "emphasis", "labelDy": 54 },
+    { "id": "api-to-rabbitmq", "from": "api", "to": "rabbitmq", "label": "enqueue job", "variant": "emphasis" },
+    { "id": "rabbitmq-to-worker", "from": "rabbitmq", "to": "worker", "label": "consume job", "variant": "emphasis" },
+    { "id": "worker-to-minio", "from": "worker", "to": "minio", "label": "fetch video / store result.zip", "labelDy": -26 },
+    { "id": "api-to-minio", "from": "api", "to": "minio", "label": "upload raw video / presign URL", "fromSide": "top", "toSide": "top", "via": [[350, 150], [1100, 150]] },
+    { "id": "api-to-postgres", "from": "api", "to": "postgres", "label": "persist users/jobs", "fromSide": "bottom", "toSide": "top" },
+    { "id": "worker-to-postgres", "from": "worker", "to": "postgres", "label": "update job status", "fromSide": "bottom", "toSide": "top" },
+    { "id": "worker-to-smtp", "from": "worker", "to": "smtp", "label": "send notification", "variant": "dashed", "labelDy": -58 },
+    { "id": "browser-to-minio", "from": "browser", "to": "minio", "label": "download via presigned URL", "variant": "dashed", "fromSide": "top", "toSide": "top", "via": [[105, 90], [1100, 90]] },
+    { "id": "migrate-to-postgres", "from": "migrate", "to": "postgres", "label": "apply schema (startup)", "variant": "dashed", "labelDy": 56 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Bounded contexts (hexagonal)", "items": ["identity, videoprocessing, notification isolate domain from adapters", "cmd/api and cmd/worker are the only composition roots"] },
+    { "dot": "emerald", "title": "Primary path", "items": ["Upload → enqueue → consume → extract frames → zip to MinIO → notify", "Failed jobs land in a RabbitMQ dead-letter exchange (max 3 attempts)"] },
+    { "dot": "rose", "title": "Security", "items": ["JWT (HS256) protects video routes; CORS scoped to FRONTEND_ORIGIN", "Result downloads use time-limited presigned URLs, not proxied via API"] },
+    { "dot": "amber", "title": "Known gaps", "items": ["fiapx-web still calls a mocked api-client, no real HTTP integration yet", "Redis is provisioned in docker-compose but unused by any code path"] }
+  ]
+}

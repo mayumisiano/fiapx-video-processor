@@ -35,6 +35,11 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
@@ -78,6 +83,8 @@ services:
       dockerfile: Dockerfile.identity-api
     depends_on:
       postgres-identity:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     env_file: .env
     ports:

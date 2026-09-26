@@ -18,9 +18,9 @@ func NewHandler(service *application.Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) RegisterRoutes(r gin.IRouter) {
+func (h *Handler) RegisterRoutes(r gin.IRouter, loginRateLimit gin.HandlerFunc) {
 	r.POST("/auth/register", h.Register)
-	r.POST("/auth/login", h.Login)
+	r.POST("/auth/login", loginRateLimit, h.Login)
 }
 
 type registerRequest struct {

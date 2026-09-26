@@ -8,7 +8,7 @@
 |---|---|
 | Language | **Go** |
 | Relational persistence | **PostgreSQL** |
-| Cache / fast reads | **Redis** |
+| Login rate limiting | **Redis** (`docs/adr/0010`) |
 | Messaging | **RabbitMQ** |
 | File storage | **MinIO** (S3-compatible) |
 | Authentication | **Homegrown JWT** (bcrypt for password hashing) |
@@ -28,8 +28,8 @@ flowchart LR
     Client[Frontend - fiapx-frontend] --> IdAPI[identity-api - Go/Gin]
     Client --> API[video-api - Go/Gin]
     IdAPI --> IdDB[(PostgreSQL: fiapx_identity)]
+    IdAPI --> Cache[(Redis)]
     API --> DB[(PostgreSQL: fiapx_video)]
-    API --> Cache[(Redis)]
     API --> Storage[(MinIO)]
     API --> MQ[(RabbitMQ)]
     MQ --> Worker[video-worker - Go, N replicas]
@@ -49,6 +49,7 @@ Three independently deployable Go binaries, one per bounded context with a runti
 Owns the Identity & Access context and its own database (`fiapx_identity`). Responsible for:
 - Registration and login (bcrypt password hashing).
 - JWT issuance.
+- Rate limiting `/auth/login` per client IP against Redis (`docs/adr/0010`).
 
 Has no protected endpoints of its own — nothing calls back into it to validate a token; see `video-api` below.
 
@@ -57,7 +58,7 @@ Has no protected endpoints of its own — nothing calls back into it to validate
 Owns the Video Processing context's synchronous side, its own database (`fiapx_video`), responsible for:
 - Verifying JWTs locally against a secret shared with `identity-api` (`internal/platform/jwt.Verify`) — no network call between the two services.
 - Video upload (format/size/duration validation, writing to MinIO, creating the `ProcessingRequest` in Postgres, publishing to the queue).
-- Status query (lists the authenticated user's requests — reading from Postgres, with Redis as a read cache).
+- Status query (lists the authenticated user's requests, reading from Postgres).
 - Download URL generation (presigned URL from MinIO).
 
 ### `video-worker` (horizontally scalable)
@@ -78,7 +79,7 @@ Two databases, one per service: `fiapx_identity` (users) and `fiapx_video` (proc
 
 ### Redis
 
-Provisioned in `docker-compose.yml` as a candidate read cache for the status listing endpoint (avoiding repeated Postgres queries from frontend polling) and, optionally, a pub/sub channel for real-time push. **Not yet wired into the code** — no package currently reads from or writes to it. It's not a critical dependency either way: the system works correctly without it, just with more direct load on Postgres. Kept in the compose file as a documented, deliberate placeholder for that future optimization rather than removed, since the stack recommendation explicitly names it.
+Backs login rate limiting: `identity-api` counts `/auth/login` attempts per client IP in a fixed one-minute window, rejecting with `429` past 5 attempts (`docs/adr/0010`). Fails open if Redis is unreachable — a secondary anti-abuse protection going down must not take authentication down with it. A read cache for the status listing endpoint or upload idempotency were also considered for this Redis instance but not implemented; either remains a possible additive use later.
 
 ### RabbitMQ
 
@@ -97,8 +98,8 @@ Stores original videos and result packages (`.zip`). Chosen instead of local con
 |---|---|
 | Process more than one video at a time | Multiple `video-worker` replicas consuming the same queue (`docker compose up --scale video-worker=N`) |
 | Don't lose requests under peak load | `VideoAcceptedForProcessing` is a lightweight transaction (writes to Postgres + publishes to the queue) and returns immediately; RabbitMQ persists the message until it's processed |
-| Protected by username and password | JWT (issued by `identity-api`, verified locally by `video-api`) + bcrypt |
-| Status listing | Query endpoint reading from Postgres (Redis cache provisioned, not yet wired — see §3) |
+| Protected by username and password | JWT (issued by `identity-api`, verified locally by `video-api`) + bcrypt + Redis-backed login rate limiting (`docs/adr/0010`) |
+| Status listing | Query endpoint reading from Postgres |
 | Notification on error | Worker sends an email via SMTP upon reaching `ProcessingFailed`/`RetriesExhausted` |
 | Data persistence | PostgreSQL, one database per service (data) + MinIO (files) |
 | Scalable architecture | `video-worker` is stateless and horizontally scalable; `video-api` and `identity-api` are also stateless (JWT-based session, not in-memory session) |

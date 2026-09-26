@@ -28,6 +28,8 @@
 .env
 .env.local
 
-
 # Test
 testdata/
+
+# Playwright MCP output (screenshots, page snapshots, console logs)
+.playwright-mcp/

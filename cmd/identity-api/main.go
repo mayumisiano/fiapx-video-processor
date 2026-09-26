@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,12 +12,20 @@ import (
 	identityhttp "video-processor/internal/identity/http"
 	identityjwt "video-processor/internal/identity/jwt"
 	identitypostgres "video-processor/internal/identity/postgres"
+	"video-processor/internal/identity/ratelimit"
 	"video-processor/internal/platform/config"
 	"video-processor/internal/platform/httpcors"
 	"video-processor/internal/platform/metrics"
 	"video-processor/internal/platform/migrate"
 	platformpostgres "video-processor/internal/platform/postgres"
+	platformredis "video-processor/internal/platform/redis"
 	identitymigrations "video-processor/migrations/identity"
+)
+
+// Login rate limit: 5 attempts per IP per minute (docs/adr/0010).
+const (
+	loginRateLimitMax    = 5
+	loginRateLimitWindow = time.Minute
 )
 
 func main() {
@@ -32,6 +41,14 @@ func main() {
 		log.Fatalf("connect to postgres: %v", err)
 	}
 	defer pool.Close()
+
+	redisClient, err := platformredis.NewClient(cfg.RedisURL)
+	if err != nil {
+		log.Fatalf("connect to redis: %v", err)
+	}
+	defer redisClient.Close()
+
+	limiter := ratelimit.NewLimiter(ratelimit.NewRedisStore(redisClient), loginRateLimitMax, loginRateLimitWindow)
 
 	repo := identitypostgres.NewRepository(pool)
 	issuer := identityjwt.NewIssuer(cfg.JWTSecret)
@@ -52,7 +69,7 @@ func main() {
 	router.GET("/metrics", gin.WrapH(metrics.Handler()))
 
 	v1 := router.Group("/api/v1")
-	handler.RegisterRoutes(v1)
+	handler.RegisterRoutes(v1, identityhttp.RateLimitLogin(limiter))
 
 	if err := router.Run(":" + cfg.IdentityPort); err != nil {
 		log.Fatalf("run server: %v", err)
