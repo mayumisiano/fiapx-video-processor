@@ -61,7 +61,11 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    # MinIO pulled its free images from Docker Hub and quay.io in
+    # September 2026 (repo archived, pivoted to a commercial product).
+    # ghcr.io/coollabsio/minio is a third-party mirror, pinned to an
+    # exact upstream release for reproducibility.
+    image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
