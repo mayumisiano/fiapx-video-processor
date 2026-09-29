@@ -1,0 +1,53 @@
+flowchart TD
+    user(["User"])
+    smtp[["SMTP Relay"]]
+
+    subgraph client [" "]
+        web["Web Client
+        React / TanStack Start"]
+    end
+
+    subgraph idsvc ["Identity service"]
+        idapi["Identity API
+        Go · Gin :8081"]
+        idredis[("Redis
+        login rate limit")]
+        idpg[("Postgres
+        identity")]
+    end
+
+    subgraph vidsvc ["Video processing service"]
+        vidapi["Video API
+        Go · Gin :8080"]
+        mq[["RabbitMQ
+        job queue + DLX"]]
+        worker["Video Worker ×N
+        Go · ffmpeg"]
+        vidpg[("Postgres
+        video")]
+        minio[("MinIO
+        object storage")]
+    end
+
+    user --> web
+    web -- "auth" --> idapi
+    web -- "upload / status" --> vidapi
+    web -- "download" --> minio
+
+    idapi --> idpg
+    idapi --> idredis
+
+    vidapi --> vidpg
+    vidapi -- "enqueue" --> mq
+    vidapi --> minio
+    mq -- "consume" --> worker
+    worker --> vidpg
+    worker --> minio
+    worker -- "notify" --> smtp
+
+    classDef idclass fill:#CFF5EE,stroke:#0E9488,color:#0B3B37
+    classDef vidclass fill:#FCE9D2,stroke:#B45309,color:#4A2A05
+    classDef ext fill:#E9EDF1,stroke:#7C8A97,color:#2A333B
+    class idapi,idredis,idpg idclass
+    class vidapi,mq,worker,vidpg,minio vidclass
+    class user,smtp,web ext

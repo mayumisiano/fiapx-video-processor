@@ -4,13 +4,15 @@ Backend for the FIAP X Video Processing System (POSTECH/SOAT Hackathon — Phase
 
 Hexagonal architecture in Go, split into three independently deployable services, one per bounded context with a runtime footprint (see [`docs/adr/0007`](docs/adr/0007-split-into-independently-deployable-services-by-bounded-context.md)):
 
-- **`identity-api`** (port `8081`) — HTTP (Gin): registration, login, JWT issuance. Owns its own database.
+- **`identity-api`** (port `8081`) — HTTP (Gin): registration, login, JWT issuance. Owns its own database. Login is rate-limited (5 attempts/minute per IP, Redis-backed — see [`docs/adr/0010`](docs/adr/0010-redis-backed-login-rate-limiting.md)).
 - **`video-api`** (port `8080`) — HTTP (Gin): upload, status listing, download, retry. Verifies JWTs locally against a secret shared with `identity-api`. Owns its own database.
 - **`video-worker`** — RabbitMQ consumer: extracts frames with `ffmpeg`, builds the `.zip`, updates status, sends the outcome notification.
 
 Notification is an in-process library used by `video-worker`, not a separate service (see [`docs/adr/0006`](docs/adr/0006-notification-sent-synchronously-best-effort.md)). There is no API gateway yet — the frontend talks to `identity-api` and `video-api` directly on their own ports.
 
 The frontend (TanStack Start + React) lives in a separate repository: [`fiapx-web`](../fiapx-web).
+
+![C4 container diagram](docs/architecture/C4/c4-container-diagram.png)
 
 ## Running locally
 
@@ -62,16 +64,26 @@ The same pipeline runs in CI (`.github/workflows/ci.yml`): unit tests → integr
 
 ## Documentation
 
+**Bounded contexts (strategic DDD)** — Identity is a generic subdomain, Video Processing is the core domain, Notification is supporting; contexts talk only through a token and a domain event, never a direct call:
+
+![Bounded context map](docs/architecture/domain-diagrams/context-map.png)
+
+**`ProcessingRequest` lifecycle** — the aggregate's state machine, including the retry policy that keeps a request from being lost under a spike:
+
+![ProcessingRequest state machine](docs/architecture/domain-diagrams/aggregate-state.png)
+
 | Topic | Document |
 |---|---|
 | Technical architecture, stack, and how each challenge requirement is met | [`docs/technical-architecture.md`](docs/technical-architecture.md) |
-| Runtime architecture diagram (interactive) | [`docs/architecture/fiapx-runtime-architecture.html`](docs/architecture/fiapx-runtime-architecture.html) |
+| C4 container diagram | [`docs/architecture/C4/c4-container-diagram.png`](docs/architecture/C4/c4-container-diagram.png) (source: [`.puml`](docs/architecture/C4/c4-container-diagram.puml)) |
+| Runtime architecture diagram (interactive, older/less accurate than the C4 diagram above) | [`docs/architecture/fiapx-runtime-architecture.html`](docs/architecture/fiapx-runtime-architecture.html) |
 | Bounded contexts and context map (strategic DDD) | [`docs/bounded-contexts.md`](docs/bounded-contexts.md) |
 | Domain modeling and business rules | [`docs/domain-modeling.md`](docs/domain-modeling.md) |
 | Event storming | [`docs/event-storming.md`](docs/event-storming.md) |
 | Core domain (aggregates, invariants) | [`docs/core-domain.md`](docs/core-domain.md) |
 | Use cases | [`docs/use-cases.md`](docs/use-cases.md) |
 | API contract (routes, request/response, status codes) | [`docs/api-contract.md`](docs/api-contract.md) |
+| Login rate limiting (Redis-backed) | [`docs/adr/0010`](docs/adr/0010-redis-backed-login-rate-limiting.md) |
 | Recorded architectural decisions (ADR) | [`docs/adr/`](docs/adr/) |
 | Database schema / creation script | [`migrations/`](migrations/) |
 

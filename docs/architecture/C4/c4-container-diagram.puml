@@ -1,0 +1,38 @@
+@startuml FIAP X Container Diagram
+!include c4lib/C4_Container.puml
+
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+Person(user, "User", "Uploads videos, checks status, downloads results")
+
+System_Boundary(fiapx, "FIAP X (Docker Compose)") {
+  Container(web, "Web Client", "React / TanStack Start", "Login, upload, status, retry")
+  Container(idapi, "Identity API", "Go, Gin :8081", "Register, login, issues JWT")
+  Container(vidapi, "Video API", "Go, Gin :8080", "Upload, status, download, retry")
+  ContainerQueue(mq, "RabbitMQ", "AMQP", "Job queue + dead-letter, max 3 attempts")
+  Container(worker, "Video Worker", "Go, ffmpeg", "Extracts frames — scales horizontally (xN)")
+  ContainerDb(idpg, "Postgres", "PostgreSQL", "Identity DB — users")
+  ContainerDb(vidpg, "Postgres", "PostgreSQL", "Video DB — processing requests")
+  ContainerDb(redis, "Redis", "Redis", "Login rate limiting")
+  Container(minio, "MinIO", "S3-compatible", "Video + result object storage")
+}
+
+System_Ext(smtp, "SMTP Relay", "Transactional email")
+
+Rel(user, web, "Uses")
+Rel(web, idapi, "Auth", "HTTPS")
+Rel(web, vidapi, "Upload / status", "HTTPS + JWT")
+Rel(web, minio, "Downloads result", "presigned URL")
+Rel(idapi, idpg, "Reads/writes")
+Rel(idapi, redis, "Rate limits")
+Rel(vidapi, vidpg, "Reads/writes")
+Rel(vidapi, mq, "Enqueues")
+Rel(vidapi, minio, "Uploads / presigns")
+Rel(mq, worker, "Delivers job")
+Rel(worker, vidpg, "Updates status")
+Rel(worker, minio, "Fetch / store")
+Rel(worker, smtp, "Notifies")
+
+SHOW_LEGEND()
+@enduml
